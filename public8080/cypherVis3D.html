@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>CypherVis3D</title>
+</head>
+
+<body>
+<script src="js/jquery-1.11.3.min.js"></script>
+
+<script src="../socket.io/socket.io.js"></script>  
+
+<script src="js/three.min.js"></script>
+<script src="js/TrackballControls.js"></script>
+<script src="js/d3.v3.min.js"></script>
+<script src="js/OBJLoader.js"></script>
+<script src="js/MTLLoader.js"></script>
+<script src="js/OBJMTLLoader.js"></script>
+<script src="js/DDSLoader.js"></script>
+<link type="text/css" href="cypherGraphAdd.css" rel="stylesheet" />
+<link type="text/css" rel="stylesheet"  href="jquery-ui-1.11.4.darkhive/jquery-ui.min.css" />
+<script src="jquery-ui-1.11.4.darkhive/jquery-ui.min.js"></script>  
+<div id="container">
+  <div class="query">
+    <p><span id="contents"></span></p>
+    <textarea id="query">MATCH p=(a {name:'George Lucas'})--(b)--(c) UNWIND relationships(p) AS x RETURN x ORDER BY b.releaseDate</textarea>
+    <div>
+      <button id="buttonQ">Send Query</button>
+    </div>
+  </div>
+  
+  <div class="switch">
+    <p>Nodes Controller</p>
+    <p>
+      <input id="demo1" type="checkbox">      
+      <label for="demo1" data-on-label="Bar chart" data-off-label="Text"></label>
+    </p>
+    <p>
+      <input id="demo2" type="checkbox" checked>      
+      <label for="demo2" data-on-label="Fixed" data-off-label="Variable"></label>
+    </p>
+  </div>
+  
+  <div class="sliders">
+    <p><span>Bar maximum: </span><span id="amount1"></span></p>
+    <div id="slider1"></div>
+
+    <p><button id="buttonB">Clear bar chart</button></p>    
+    <p><button id="buttonL">Clear text</button></p>    
+    <p><button id="buttonA">Show propeties(reload)</button></p>    
+  </div>
+  
+  <div class="slider2">
+    <p><span>Animation interval (msec): </span><span id="amount2"></span></p>
+    <div id="slider2"></div>
+  </div>
+    
+  <div class="slider3">
+    <p><span>Edge pickup height: </span><span id="amount3"></span></p>
+    <div id="slider3"></div>
+    <p><button id="buttonP">Clear pickup</button></p>    
+  </div>
+  
+  <div class="menu" id="nodeButtons">
+  </div>
+  <div class="menu2" id="edgeButtons">
+  </div>  
+</div>
+
+<script type="text/javascript">
+
+$(function() {
+
+  // Graph data
+  var nodes = [];
+  var edges = [];
+  var nodeIDs = {};
+  var edgeIDs = {};
+  var graph = {"nodes":nodes,"edges":edges};
+  var nodeAddingInterval;
+  
+  // Socket IO
+  var deviceid;
+  var socket;
+  
+  // D3.js force layout
+  var force;
+  var nametable = {};
+  var links = [];
+  var d3nodeCount = 0;
+  
+  // Three.js
+  var notInitialized = true;
+  var scene = new THREE.Scene();
+  var width = window.innerWidth;
+  var height = window.innerHeight;
+  var renderer,camera;
+  var FAR = 10000;
+  var groundMaterial;
+  var sprites = [];
+  var label1 = [];
+  var bar = [], barMax;
+  var lines = [];
+  var lineColors = [0xFF0094,0xA500FF,0x10AAAD,0x8CBE29,0x9C5100,0xE671B5,0xEF9608,0x19A2DE,0xE61400,0x319A31];
+  var usedColors = 0;
+  var edgeTypeColor = {};
+  var initZ = 600;
+  var pickUpHeight = 200;
+  var mesh0;
+  var models = {
+    girl:{
+      file:"models/elexis-obj/elexis",
+      scale:23,
+      height:41
+    },
+    boy:{
+      file:"models/Baynes/Baynes",
+      scale:9.5,
+      height:41
+    },
+    otan:{
+      file:"models/o-tan/o-tanw",
+      scale:5, // not used
+      height:13
+    }
+  };
+    
+  function main() {
+    
+    loadSprites();
+    
+    if (!('WebSocket' in window)) alert("WebSocket is not supported in your browser.");
+    socket = io.connect();
+    
+    socket.on('result', function(relations) {
+      generateGraph(relations);
+      if (notInitialized) {
+        initD3();
+        initThree();
+        notInitialized = false;
+      }
+    });
+  
+    socket.on('node', function(node) {
+      if (node.color == undefined) node.color = Math.random() * 0xFFFFFF;
+      node.z = initZ; 
+      graph.nodes.push(node);
+    });
+
+    socket.on('mylogin', function(devid) {
+      $("#contents").text('Connected. Your device ID：'+devid);
+      deviceid = devid;    
+    });
+    
+    $("#buttonQ").on("click", function(){
+      socket.emit('query', $("#query").val());
+    });
+        
+    $("#buttonA").on("click", function(){
+      generateButtons();
+    });
+
+    $("#buttonB").on("click", function(){
+      for (n in bar) {        
+        bar[n].scale.z = 1.0;
+        bar[n].position.z = 0.5;
+      }
+    });
+    
+    $("#buttonL").on("click", function(){
+      for (n in graph.nodes) {
+        if (label1[n]) scene.remove(label1[n]);
+      }
+    });
+    
+    $("#buttonP").on("click", function() {
+      for (var n in graph.nodes) {
+        graph.nodes[n].pickUp = false;
+      }
+    });
+    
+    $("#query").on("click", function() {
+      $(this).focus();
+    });
+    
+    $("button").button();  // Apply css to the buttons
+
+    $("#slider1").slider({
+      range: "min",
+      value: 100,
+      min: 1,
+      max: 200,
+      slide: function(event, ui) {
+        barMax = ui.value;
+        $("#amount1").html(ui.value);
+      }
+    });
+    barMax = $("#slider1").slider("value");
+    $("#amount1").html(barMax);
+    
+    $("#slider2").slider({
+      range: "min",
+      value: 1000,
+      min: 10,
+      max: 2000,
+      slide: function(event, ui) {
+        nodeAddingInterval = ui.value;
+        $("#amount2").html(ui.value);
+      }
+    });
+    nodeAddingInterval = $("#slider2").slider("value");
+    $("#amount2").html(nodeAddingInterval);
+
+    $("#slider3").slider({
+      range: "min",
+      value: 100,
+      min: 0,
+      max: 200,
+      slide: function(event, ui) {
+        pickUpHeight = ui.value;
+        $("#amount3").html(ui.value);
+      }
+    });
+    pickUpHeight = $("#slider3").slider("value");
+    $("#amount3").html(pickUpHeight);
+  }
+  
+  function generateGraph(result) {
+    if (result.length>0) {
+      if (edgeIDs[result[0].id] == undefined) {
+        edgeIDs[result[0].id] = true;
+        if (result[0].start && result[0].end) {
+          addEdge(result[0]);
+          visEdge(result);
+        }
+      } else {
+          generateGraph(result.slice(1));
+      }
+    } else {
+      setTimeout(function() {
+        force.stop();
+      }, 10000); // stop after adding 10 sec 
+    }
+  }
+
+  function visEdge(result) {
+    setTimeout(function() {
+      if (Object.keys(nodeIDs).length == graph.nodes.length) {
+        addLink(result[0]);
+        addLine();
+        force.stop();
+        initD3();
+        addSprites();
+        addBar(1.0);
+        generateGraph(result.slice(1));
+      } else { 
+        setTimeout(function() { visEdge(result); }, nodeAddingInterval);
+      }
+    }, nodeAddingInterval);
+  }
+  
+  function addEdge(relation) {
+    addNode(relation.start);
+    addNode(relation.end);
+    graph.edges.push(relation);  // Should be called after node data recieved!!!
+  }
+
+  function addNode(id) {
+    if (nodeIDs[id] == undefined) {
+      nodeIDs[id]=id;
+      socket.emit('read',id);
+    }
+  }
+  
+  function generateButtons() {
+    $("#nodeButtons").empty();
+    var labels = {};
+    var props = {};
+    for (var n in graph.nodes){
+      for (var k in Object.keys(graph.nodes[n])) {
+        if (props[Object.keys(graph.nodes[n])[k]]) props[Object.keys(graph.nodes[n])[k]]++; 
+        else props[Object.keys(graph.nodes[n])[k]] = 1;
+      }
+      for (var k in graph.nodes[n].labels) {
+        labels[graph.nodes[n].labels[k]] = true; 
+      }
+    }
+    
+    var dom = $('<p>Node Labels</p>');
+    $("#nodeButtons").append(dom);
+    
+    // Labels Buttons
+    for (var i in Object.keys(labels)) {
+      dom = $('<button id="label'+i+'">'+Object.keys(labels)[i]+'</button>');
+      $("#nodeButtons").append(dom);
+      $(document).on("click","#label"+i, function(e) {
+        for (var n in bar) {
+          if (graph.nodes[n].labels.indexOf(e.currentTarget.textContent)>=0) {
+            height = barMax; 
+          } else {
+            height = 0.01;
+          }
+          bar[n].scale.z = height;
+          bar[n].position.z = height/2;
+        }
+        console.log(e.currentTarget.textContent);
+      });
+    };
+
+    
+    dom = $('<p>Node Properties</p>');
+    $("#nodeButtons").append(dom);
+    
+    // Properties Buttons
+    for (var i in Object.keys(props)) {
+      dom = $('<button id="prop'+i+'">'+Object.keys(props)[i]+'</button>');
+      $("#nodeButtons").append(dom);
+      $(document).on("click","#prop"+i, function(e) {
+        if ($("#demo1").prop('checked')) {
+          showBar(e.currentTarget.textContent);
+        } else {
+          for (var n in graph.nodes) {
+            graph.nodes[n].label = graph.nodes[n][e.currentTarget.textContent];
+            generateLabel(n);
+          }
+        }
+      });
+    };
+    
+    // EdgeButtons
+    $("#edgeButtons").empty();
+
+    dom = $('<p> Edge Types </p>');
+    $("#edgeButtons").append(dom);
+    edgeTypes = {};
+    for (var n in graph.edges) {
+      edgeTypes[graph.edges[n].type] = false;
+    }
+    
+    for (var i in Object.keys(edgeTypes)) {
+      
+      var p = Object.keys(edgeTypes)[i];
+      $("#edgeButtons").append($('<button id="type'+i+'">'+p+'</button>')
+        .css('color','#' + edgeTypeColor[p].toString(16)));
+      console.log(edgeTypeColor[p].toString(16));
+      $(document).on("click","#type"+i, function(e) {
+        for (var n in graph.edges) {
+          if (graph.edges[n].type == e.currentTarget.textContent) {
+            if (graph.nodes[nametable[graph.edges[n].start]])
+              graph.nodes[nametable[graph.edges[n].start]].pickUp = true;
+            if (graph.nodes[nametable[graph.edges[n].end]])
+              graph.nodes[nametable[graph.edges[n].end]].pickUp = true;
+          }
+          // generateLabel(n,e.currentTarget.textContent); // future work
+        }
+      });
+    };
+    
+    $("button").button(); // Apply css to the buttons.
+  }
+  
+  function addLink(relation) {
+    var start = relation.start;
+    var end = relation.end;
+    var type = relation.type;
+    
+    if (nametable[start] == undefined) nametable[start] = d3nodeCount++;
+    if (nametable[end] == undefined) nametable[end] = d3nodeCount++;
+    
+    var link = {};
+    link.source = nametable[start];
+    link.target = nametable[end];
+    if (edgeTypeColor[type] == undefined) {
+      if (usedColors>9) edgeTypeColor[type] = Math.random()*0xFFFFFF;
+      else edgeTypeColor[type] = lineColors[usedColors++];      
+    }
+    link.color = edgeTypeColor[type];
+    links.push(link);
+  }
+  
+  function addLine() {  
+    var i = links.length - 1;
+    var geometryline = new THREE.Geometry();
+    geometryline.vertices.push( new THREE.Vector3(0,0,0));
+    geometryline.vertices.push( new THREE.Vector3(100,0,0));
+    var line = new THREE.Line( geometryline, 
+               new THREE.LineBasicMaterial({ linewidth:2, color: links[i].color, fog:true}));
+    line.frustumCulled = false;
+    lines.push(line);
+    scene.add(line);
+  }
+
+  
+  function initThree() {
+    camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, FAR);
+    camera.position.set(window.innerWidth/2, window.innerHeight/2, 800);
+    controls = new THREE.TrackballControls(camera);
+
+    renderer = new THREE.WebGLRenderer();
+    renderer.setSize(width, height);
+    renderer.setClearColor(0x151530);
+    document.body.appendChild(renderer.domElement);
+    
+    groundMaterial = new THREE.MeshPhongMaterial({ 
+      color: 0x303040,
+      shininess: 50
+    });
+    var ground = new THREE.Mesh( new THREE.PlaneBufferGeometry(2000, 2000, 2, 2), groundMaterial );
+    ground.position.x = width/2;
+    ground.position.y = height/2;
+    ground.position.z = -9;
+    scene.add(ground);
+
+    var alight = new THREE.AmbientLight(0xffffff); //was 0.3
+    scene.add(alight);
+    
+    //scene.fog = new THREE.Fog(0x040306, 10, FAR);
+    scene.fog = new THREE.Fog(0x444444, 10, FAR/2);
+    
+    renderLoop();
+
+  }
+  
+  function loadSprites() {      
+    THREE.Loader.Handlers.add( /\.dds$/i, new THREE.DDSLoader() );
+
+    // Default Sprite for high speed rendering
+    var geometry = new THREE.PlaneBufferGeometry(1.0,1.0);        
+    var material = new THREE.MeshBasicMaterial({
+      transparent: true,
+      opacity: 0.0
+    });
+    mesh0 = new THREE.Mesh(geometry,material);
+    
+    var loader = new THREE.OBJMTLLoader();
+  
+    loader.load(models.girl.file+".obj",models.girl.file+".mtl",           
+      function(mesh){
+        mesh.rotation.set(Math.PI/2.2,0,0); // To be provided by models.
+        mesh.scale.set(models.girl.scale,models.girl.scale,models.girl.scale);
+        models.girl.mesh = mesh;
+      });
+
+    loader.load(models.boy.file+".obj",models.boy.file+".mtl",           
+      function(mesh){
+        mesh.rotation.set(Math.PI/2,0,0); // To be provided by models.
+        mesh.scale.set(models.boy.scale,models.boy.scale,models.boy.scale);
+        models.boy.mesh = mesh;
+      });
+    
+    loader.load(models.otan.file+".obj",models.otan.file+".mtl",           
+      function(mesh){
+        // transparent plane for addjusting z position. 
+        var geometry = new THREE.PlaneBufferGeometry(1.0,1.0);        
+        var material = new THREE.MeshBasicMaterial({
+          transparent: true,
+          opacity: 0.0
+        });
+        var placement = new THREE.Mesh(geometry,material);
+
+        var geometry = new THREE.SphereGeometry(43.0,32,32);        
+        var material = new THREE.MeshLambertMaterial({
+          color: 0x888888
+        });
+        var cover = new THREE.Mesh(geometry,material);
+      
+        cover.scale.set(1.0,1.0,0.8);
+        mesh.scale.set(0.1,0.1,0.1);
+        mesh.add(cover);
+        mesh.rotation.set(Math.PI/2,0,0);
+        mesh.position.z = 5.0;
+        placement.add(mesh);
+        models.otan.mesh = placement;
+        models.otan.height = 12;
+      });
+  }
+
+  function addSprites() {
+    for (var n=sprites.length; n<graph.nodes.length; n++) {
+      
+      if (graph.nodes[n].labels.indexOf('COMMENT') >= 0) {
+        sprites[n] = mesh0.clone();
+        graph.nodes[n].height = 3.0;
+      } else if (graph.nodes[n].labels.indexOf('Director') >= 0) {
+        sprites[n] = models.boy.mesh.clone();
+        graph.nodes[n].height = models.girl.height;
+      } else if (graph.nodes[n].labels.indexOf('Actor') >= 0) {
+        sprites[n] = models.girl.mesh.clone();
+        graph.nodes[n].height = models.girl.height;
+      } else if (graph.nodes[n].labels.indexOf('Person') >= 0) {
+        sprites[n] = models.girl.mesh.clone();
+        graph.nodes[n].height = models.girl.height;
+      } else {
+        sprites[n] = models.otan.mesh.clone();
+        graph.nodes[n].height = models.otan.height;
+      }
+      
+      var color = graph.nodes[n].color;
+      if (color == undefined) color = 0xFFFFFF; 
+      var modelLight = new THREE.PointLight(color,1.5,70 );
+      modelLight.position.z = 0;
+      sprites[n].add(modelLight); // Must be comment out when many nodes.
+      groundMaterial.needsUpdate = true;
+      scene.add(sprites[n]);
+    }
+  }
+  
+  function generateLabel(n) {
+    // Draw text in a canvas to generate label for the node n.
+    if (sprites[n] != undefined && graph.nodes[n].label != undefined) {
+      if (label1[n]) scene.remove(label1[n]);
+      var canvas = document.createElement('canvas');
+      var textWidth = String(graph.nodes[n].label).length * 16; // px
+      canvas.width = textWidth; canvas.height = 32;
+      var ctx = canvas.getContext('2d');
+      ctx.fillStyle = 'rgba(0,255,255,0.2)'; //graph.nodes[n].color;
+      ctx.fillRect(0,0,textWidth,32);
+      ctx.font = "28px sans-serif";
+      ctx.textAlign = 'center';
+      ctx.fillStyle = 'rgb(255,255,255)'; //graph.nodes[n].color;
+      ctx.fillText(graph.nodes[n].label, textWidth/2, 30, textWidth);
+      var texture = new THREE.Texture(canvas);
+      texture.needsUpdate = true;
+      var geometry = new THREE.PlaneBufferGeometry(textWidth/6,5);
+      //var geometry = new THREE.PlaneBufferGeometry(40,5);
+      var material = new THREE.MeshBasicMaterial({
+        transparent: true,
+        opacity: 1.0,
+        map: texture,
+        side: THREE.DoubleSide
+      });
+      label1[n] = new THREE.Mesh(geometry, material);
+      label1[n].position.x = sprites[n].position.x;
+      label1[n].position.y = sprites[n].position.y-5;
+      label1[n].rotation.set(Math.PI/2,0,0); 
+      scene.add(label1[n]);
+    }
+  }
+
+  function addBar(height){    
+    for (var n=bar.length; n < graph.nodes.length; n++) {
+      if (graph.nodes[n].labels[0] == 'COMMENT') {
+        var material = new THREE.MeshBasicMaterial({
+          opacity: 0.0,
+          transparent: true
+        });
+      } else {
+        var material = new THREE.MeshPhongMaterial({
+          color: 0xAAAAFF,
+          opacity: 0.6,
+          transparent: true,
+          specular: 0xAAAA00
+        });
+      }
+      bar[n] = new THREE.Mesh(new THREE.BoxGeometry(10,10,1.0), material);
+      bar[n].position.x = graph.nodes[n].x;
+      bar[n].position.y = graph.nodes[n].y;
+      bar[n].position.z = graph.nodes[n].z;
+      bar[n].scale.z = height;
+      scene.add(bar[n]);
+    }
+  }
+  
+  function showBar(prop) {
+    var max = 0;
+    for (var n in graph.nodes) {
+      if (graph.nodes[n][prop] > max) max = graph.nodes[n][prop];
+    }
+    if (max==0) max = barMax; // For non number or negative properties.
+
+    for (var n in bar) {
+      
+      var height = graph.nodes[n][prop];
+      if ($("#demo2").prop('checked') && height != undefined) height = max;
+      else if (isNaN(height)) height = 0.01;
+      height = barMax * height / max; // Normarized
+      if (height <= 0) height = 0.01; // Non-zero value for avoid warnings
+      
+      bar[n].scale.z = height;
+      bar[n].position.z = height/2;
+	}
+  }
+  
+  function renderLoop () {
+    requestAnimationFrame( renderLoop );
+    controls.update(); 
+    force.tick();
+    for (var n=0; n<sprites.length; n++) {
+      if (graph.nodes[n].z > 10) graph.nodes[n].z -= 10;
+      if (graph.nodes[n].pickUp) graph.nodes[n].z = pickUpHeight;
+      sprites[n].position.x = graph.nodes[n].x;
+      sprites[n].position.y = graph.nodes[n].y;
+      sprites[n].position.z = graph.nodes[n].z + bar[n].scale.z;
+      bar[n].position.x = graph.nodes[n].x;
+      bar[n].position.y = graph.nodes[n].y;
+      bar[n].position.z = graph.nodes[n].z + bar[n].scale.z * 0.5;
+      if (label1[n]) {
+        label1[n].position.x = graph.nodes[n].x;
+        label1[n].position.y = graph.nodes[n].y;
+        label1[n].position.z = sprites[n].position.z + graph.nodes[n].height;
+      }
+    };
+    
+    for (var j=0; j<lines.length; j++){
+      lines[j].geometry.vertices[0].x = graph.nodes[nametable[links[j].source.id]].x;
+      lines[j].geometry.vertices[0].y = graph.nodes[nametable[links[j].source.id]].y;
+      lines[j].geometry.vertices[0].z = graph.nodes[nametable[links[j].source.id]].z;
+      lines[j].geometry.vertices[1].x = graph.nodes[nametable[links[j].target.id]].x;
+      lines[j].geometry.vertices[1].y = graph.nodes[nametable[links[j].target.id]].y;
+      lines[j].geometry.vertices[1].z = graph.nodes[nametable[links[j].target.id]].z;
+      lines[j].geometry.verticesNeedUpdate = true;
+    }
+    
+    render();    
+  }
+  
+  function render() {
+    renderer.render(scene, camera);
+  }
+
+  // Force-directed layout by D3.js
+  function initD3() {
+    var width = window.innerWidth;
+    var height = window.innerHeight;
+    force = d3.layout.force()
+        .nodes(graph.nodes)
+        .links(links)
+        .size([width,height])
+        .gravity(0.1)
+        .charge([-150])  // was -100 :repulsion forth between nodes
+        .friction(0.95) 
+        .linkDistance([70])
+        .linkStrength(1);
+    force.start();
+  }
+  
+  main();
+
+}); // End of $(function (){
+
+</script>
+ 
+</body>
+</html>
