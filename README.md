@@ -20,19 +20,27 @@ http://qa.fujimura.com:8080/neo3vis/
 
 4. Install [socket.io](http://socket.io/)
 
+5. Install [express.js](https://expressjs.com/)
+
+6. Install [d3.js](https://d3js.org/)
+
+7. Install [three.js](https://threejs.org/)
+
 ## How to use
 
-1. Store data into Neo4j
+1. Store data into Neo4j (e.g, The movie sample database provided by Neo4j.)
 
 2. Start Neo4j
+
+   Set password to access Neo4j via http://localhost:7474 and edit cypherVis3DWebServer8080.js to set the password.
 
 3. Start Web server
 
    ```bash
-   $ sudo nodejs cypherVis3DWebServer8080.js
+   $ node cypherVis3DWebServer8080.js
    ```
 
-4. Access http://localhost:8080/neo3vis/
+4. Access http://localhost:8080/cypherVis3D.html
 
 5. Run (input Cypher Query)
 

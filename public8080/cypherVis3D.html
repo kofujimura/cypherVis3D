@@ -22,7 +22,8 @@
 <div id="container">
   <div class="query">
     <p><span id="contents"></span></p>
-    <textarea id="query">MATCH p=(a:Address {countries:'Japan'})--(b:Officer)--(c:Entity) WHERE b.node_id <> "56917" AND b.node_id <> "75595" UNWIND relationships(p) AS x RETURN x ORDER BY c.incorporation_date_ut LIMIT 10
+    <textarea id="query">
+      MATCH p=(a {name:'George Lucas'})--(b)--(c) UNWIND relationships(p) AS x RETURN x ORDER BY b.releaseDate
     </textarea>
     <div>
       <button id="buttonQ">Send Query</button>
@@ -573,8 +574,8 @@ $(function() {
         sprites[n] = models.boy.mesh.clone();
         graph.nodes[n].height = models.boy.height;
       } else {
-        sprites[n] = models.otan.mesh.clone();
-        graph.nodes[n].height = models.otan.height;
+        sprites[n] = models.building.mesh.clone(); // Default model
+        graph.nodes[n].height = models.building.height; 
       }
       
       // Commented out for panama papers analysis.
@@ -588,7 +589,6 @@ $(function() {
       */
       //
       
-      // マテリアル
       var material = new THREE.SpriteMaterial({
         map: particle,
         color: 0xffffff,
@@ -596,7 +596,7 @@ $(function() {
         opacity: 0.2,
         transparent: true
       });
-      // スプライト
+      
       var glow = new THREE.Sprite(material);
       glow.scale.multiplyScalar(10);
       sprites[n].add(glow);

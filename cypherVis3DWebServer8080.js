@@ -8,8 +8,8 @@ console.log('server start:', 8080);
 // Seraph for access Neo4j server from WebScoket server.
 var db = require("seraph")({
   server:"http://localhost:7474",
-  user: "[user id for neo4j]",
-  pass: "[password for neo4j]"});
+  user: "<<account id for neo4j>>",
+  pass: "<<password for neo4j>>"});
 // Socket.IO
 var io = require('socket.io'),
     io = io.listen(server);
@@ -19,7 +19,6 @@ io.sockets.on('connection', function(socket) {
   packet.id = socket.id.substr(2,6);
 
   socket.emit('mylogin', packet.id);
-  io.sockets.emit('login', packet.id);
     
   socket.on('query', function(data) {
     db.query(data, function(err, result) {
