@@ -15,7 +15,6 @@
 <script src="js/d3.v3.min.js"></script>
 <script src="js/OBJLoader.js"></script>
 <script src="js/MTLLoader.js"></script>
-<script src="js/OBJMTLLoader.js"></script>
 <script src="js/DDSLoader.js"></script>
 <link type="text/css" href="cypherGraphAdd.css" rel="stylesheet" />
 <link type="text/css" rel="stylesheet"  href="jquery-ui-1.11.4.darkhive/jquery-ui.min.css" />
@@ -23,7 +22,8 @@
 <div id="container">
   <div class="query">
     <p><span id="contents"></span></p>
-    <textarea id="query">MATCH p=(a {name:'George Lucas'})--(b)--(c) UNWIND relationships(p) AS x RETURN x ORDER BY b.releaseDate</textarea>
+    <textarea id="query">MATCH p=(a:Address {countries:'Japan'})--(b:Officer)--(c:Entity) WHERE b.node_id <> "56917" AND b.node_id <> "75595" UNWIND relationships(p) AS x RETURN x ORDER BY c.incorporation_date_ut LIMIT 10
+    </textarea>
     <div>
       <button id="buttonQ">Send Query</button>
     </div>
@@ -109,21 +109,41 @@ $(function() {
   var mesh0;
   var models = {
     girl:{
-      file:"models/elexis-obj/elexis",
+      path:"models/elexis-obj/",
+      mtlfile: "elexis.mtl",
+      objfile: "elexis.obj",
       scale:23,
-      height:41
+      height:39
     },
     boy:{
-      file:"models/Baynes/Baynes",
+      path:"models/Baynes/",
+      mtlfile: "Baynes.mtl",
+      objfile: "Baynes.obj",
       scale:9.5,
-      height:41
+      height:39
     },
     otan:{
-      file:"models/o-tan/o-tanw",
+      file:"models/o-tan/",
+      mtlfile: "o-tanw.mtl",
+      objfile: "o-tanw.obj",
       scale:5, // not used
       height:13
+    },
+    address:{
+      file:"models/address/",
+      scale:5, // not used
+      height:13
+    },
+    building:{
+      file:"models/building/building",
+      scale:5, // not used
+      height:22
     }
   };
+  
+  // outer glow
+  var loader = new THREE.TextureLoader();
+  var particle = loader.load('Particle01.png');
     
   function main() {
     
@@ -162,8 +182,8 @@ $(function() {
 
     $("#buttonB").on("click", function(){
       for (n in bar) {        
-        bar[n].scale.z = 1.0;
-        bar[n].position.z = 0.5;
+        bar[n].scale.y = 1.0;
+        bar[n].position.y = 0.5;
       }
     });
     
@@ -239,7 +259,7 @@ $(function() {
     } else {
       setTimeout(function() {
         force.stop();
-      }, 10000); // stop after adding 10 sec 
+      }, 10000); // stop FD computation after adding all nodes. 
     }
   }
 
@@ -300,8 +320,8 @@ $(function() {
           } else {
             height = 0.01;
           }
-          bar[n].scale.z = height;
-          bar[n].position.z = height/2;
+          bar[n].scale.y = height;
+          bar[n].position.y = height/2;
         }
         console.log(e.currentTarget.textContent);
       });
@@ -393,9 +413,10 @@ $(function() {
   
   function initThree() {
     camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, FAR);
-    camera.position.set(window.innerWidth/2, window.innerHeight/2, 800);
+    camera.position.set(window.innerWidth/2, 400, FAR/8);
+    //camera.lookAt(new THREE.Vector3(0,0,0));
     controls = new THREE.TrackballControls(camera);
-
+    
     renderer = new THREE.WebGLRenderer();
     renderer.setSize(width, height);
     renderer.setClearColor(0x151530);
@@ -405,10 +426,11 @@ $(function() {
       color: 0x303040,
       shininess: 50
     });
-    var ground = new THREE.Mesh( new THREE.PlaneBufferGeometry(2000, 2000, 2, 2), groundMaterial );
+    var ground = new THREE.Mesh( new THREE.PlaneBufferGeometry(5000, 5000, 2, 2), groundMaterial );
     ground.position.x = width/2;
-    ground.position.y = height/2;
-    ground.position.z = -9;
+    ground.position.y = -20;
+    ground.position.z = 0; //height/2; 
+    ground.rotation.set(-Math.PI/2,0,0);
     scene.add(ground);
 
     var alight = new THREE.AmbientLight(0xffffff); //was 0.3
@@ -422,8 +444,6 @@ $(function() {
   }
   
   function loadSprites() {      
-    THREE.Loader.Handlers.add( /\.dds$/i, new THREE.DDSLoader() );
-
     // Default Sprite for high speed rendering
     var geometry = new THREE.PlaneBufferGeometry(1.0,1.0);        
     var material = new THREE.MeshBasicMaterial({
@@ -432,47 +452,100 @@ $(function() {
     });
     mesh0 = new THREE.Mesh(geometry,material);
     
-    var loader = new THREE.OBJMTLLoader();
-  
-    loader.load(models.girl.file+".obj",models.girl.file+".mtl",           
-      function(mesh){
-        mesh.rotation.set(Math.PI/2.2,0,0); // To be provided by models.
-        mesh.scale.set(models.girl.scale,models.girl.scale,models.girl.scale);
-        models.girl.mesh = mesh;
+    // Address Icon
+    var textureLoader = new THREE.TextureLoader();
+    textureLoader.load(models.address.file+"map.png",function(texture) {
+      var geometry = new THREE.BoxGeometry(10,10,1);        
+      var material = new THREE.MeshBasicMaterial({
+        map: texture
       });
-
-    loader.load(models.boy.file+".obj",models.boy.file+".mtl",           
-      function(mesh){
-        mesh.rotation.set(Math.PI/2,0,0); // To be provided by models.
-        mesh.scale.set(models.boy.scale,models.boy.scale,models.boy.scale);
-        models.boy.mesh = mesh;
-      });
-    
-    loader.load(models.otan.file+".obj",models.otan.file+".mtl",           
-      function(mesh){
-        // transparent plane for addjusting z position. 
-        var geometry = new THREE.PlaneBufferGeometry(1.0,1.0);        
+      models.address.mesh = new THREE.Mesh(geometry,material);
+      models.address.mesh.rotation.x = -Math.PI/2;
+                               
+      textureLoader.load(models.address.file+"pin.png",function(texture) {
+        var geometry = new THREE.PlaneBufferGeometry(5,10);        
         var material = new THREE.MeshBasicMaterial({
           transparent: true,
-          opacity: 0.0
+          side: THREE.DoubleSide,
+          map: texture
         });
-        var placement = new THREE.Mesh(geometry,material);
-
-        var geometry = new THREE.SphereGeometry(43.0,32,32);        
-        var material = new THREE.MeshLambertMaterial({
-          color: 0x888888
-        });
-        var cover = new THREE.Mesh(geometry,material);
-      
-        cover.scale.set(1.0,1.0,0.8);
-        mesh.scale.set(0.1,0.1,0.1);
-        mesh.add(cover);
-        mesh.rotation.set(Math.PI/2,0,0);
-        mesh.position.z = 5.0;
-        placement.add(mesh);
-        models.otan.mesh = placement;
-        models.otan.height = 12;
+        var pin = new THREE.Mesh(geometry,material);
+        pin.position.z = 5;
+        pin.rotation.x = Math.PI/2;
+        models.address.mesh.add(pin);
       });
+    });
+    
+    // Building Icon
+    var textureLoader = new THREE.TextureLoader();
+    textureLoader.load(models.building.file+".jpg",function(texture) {
+      var geometry = new THREE.BoxGeometry(1,1,1);        
+      var material = new THREE.MeshBasicMaterial({
+        transparent: true,
+        opacity: 1.0
+      });
+      var base = new THREE.Mesh(geometry,material);
+      base.rotation.x = -Math.PI/2;
+      models.building.mesh = base;
+      geometry = new THREE.BoxGeometry(10,10,16,1,1,1);
+      material = new THREE.MeshBasicMaterial({
+        map: texture
+      });
+      var top = new THREE.MeshBasicMaterial({
+        color: 0xcccccc
+      });
+      var mesh = new THREE.Mesh(geometry,new THREE.MeshFaceMaterial([material,material,material,material,top,material]));
+      mesh.position.z = 8.0;
+      models.building.mesh.add(mesh);
+    });
+    
+    // --- New Loader ----
+    THREE.Loader.Handlers.add( /\.dds$/i, new THREE.DDSLoader() );
+    
+    function objmtlLoader (model) {
+      var mtlLoader = new THREE.MTLLoader();
+      mtlLoader.setPath(model.path);
+      mtlLoader.load(model.mtlfile, function( materials ) {
+        materials.preload();
+        var objLoader = new THREE.OBJLoader();
+        objLoader.setMaterials( materials );
+        objLoader.setPath(model.path);
+        objLoader.load(model.objfile, function ( mesh ) {
+          mesh.scale.set(model.scale,model.scale,model.scale);
+          model.mesh = mesh;
+        });
+      });
+    }
+    
+    objmtlLoader(models.boy);
+    objmtlLoader(models.girl);
+    
+    /*
+    objmtlLoader(models.otan);
+    
+    // modifications for otan.
+    var geometry = new THREE.PlaneBufferGeometry(1.0,1.0);        
+    var material = new THREE.MeshBasicMaterial({
+      transparent: true,
+      opacity: 0.0
+    });
+    var placement = new THREE.Mesh(geometry,material);
+
+    var geometry = new THREE.SphereGeometry(43.0,32,32);        
+    var material = new THREE.MeshLambertMaterial({
+        color: 0x888888
+    });
+    var cover = new THREE.Mesh(geometry,material);
+      
+    cover.scale.set(1.0,1.0,0.8);
+    models.otan.mesh.scale.set(0.1,0.1,0.1);
+    models.otan.mesh.add(cover);
+    models.otan.mesh.rotation.set(Math.PI/2,0,0);
+    models.otan.mesh.position.z = 5.0;
+    placement.add(models.otan.mesh);
+    models.otan.mesh = placement;
+    models.otan.height = 12;
+    */
   }
 
   function addSprites() {
@@ -481,29 +554,57 @@ $(function() {
       if (graph.nodes[n].labels.indexOf('COMMENT') >= 0) {
         sprites[n] = mesh0.clone();
         graph.nodes[n].height = 3.0;
+      } else if (graph.nodes[n].labels.indexOf('Officer') >= 0) {
+        sprites[n] = models.boy.mesh.clone();
+        graph.nodes[n].height = models.boy.height;
+      } else if (graph.nodes[n].labels.indexOf('Entity') >= 0) {
+        sprites[n] = models.building.mesh.clone();
+        graph.nodes[n].height = models.building.height;
+      } else if (graph.nodes[n].labels.indexOf('Address') >= 0) {
+        sprites[n] = models.address.mesh.clone();
+        graph.nodes[n].height = models.address.height;
       } else if (graph.nodes[n].labels.indexOf('Director') >= 0) {
         sprites[n] = models.boy.mesh.clone();
-        graph.nodes[n].height = models.girl.height;
+        graph.nodes[n].height = models.boy.height;
       } else if (graph.nodes[n].labels.indexOf('Actor') >= 0) {
         sprites[n] = models.girl.mesh.clone();
         graph.nodes[n].height = models.girl.height;
       } else if (graph.nodes[n].labels.indexOf('Person') >= 0) {
-        sprites[n] = models.girl.mesh.clone();
-        graph.nodes[n].height = models.girl.height;
+        sprites[n] = models.boy.mesh.clone();
+        graph.nodes[n].height = models.boy.height;
       } else {
         sprites[n] = models.otan.mesh.clone();
         graph.nodes[n].height = models.otan.height;
       }
       
+      // Commented out for panama papers analysis.
+      /*
       var color = graph.nodes[n].color;
       if (color == undefined) color = 0xFFFFFF; 
       var modelLight = new THREE.PointLight(color,1.5,70 );
-      modelLight.position.z = 0;
+      modelLight.position.y = 0;
       sprites[n].add(modelLight); // Must be comment out when many nodes.
       groundMaterial.needsUpdate = true;
+      */
+      //
+      
+      // マテリアル
+      var material = new THREE.SpriteMaterial({
+        map: particle,
+        color: 0xffffff,
+        blending: THREE.AdditiveBlending,
+        opacity: 0.2,
+        transparent: true
+      });
+      // スプライト
+      var glow = new THREE.Sprite(material);
+      glow.scale.multiplyScalar(10);
+      sprites[n].add(glow);
+      
       scene.add(sprites[n]);
     }
   }
+
   
   function generateLabel(n) {
     // Draw text in a canvas to generate label for the node n.
@@ -511,6 +612,13 @@ $(function() {
       if (label1[n]) scene.remove(label1[n]);
       var canvas = document.createElement('canvas');
       var textWidth = String(graph.nodes[n].label).length * 16; // px
+      /*
+      if (textWidth>32*1.2) textWidth = 32;
+      if (textWidth>64*1.2) textWidth = 64;
+      if (textWidth>128*1.2) textWidth = 128;
+      if (textWidth>256*1.2) textWidth = 256;
+      if (textWidth>512*1.2) textWidth = 512;
+      */
       canvas.width = textWidth; canvas.height = 32;
       var ctx = canvas.getContext('2d');
       ctx.fillStyle = 'rgba(0,255,255,0.2)'; //graph.nodes[n].color;
@@ -521,22 +629,17 @@ $(function() {
       ctx.fillText(graph.nodes[n].label, textWidth/2, 30, textWidth);
       var texture = new THREE.Texture(canvas);
       texture.needsUpdate = true;
-      var geometry = new THREE.PlaneBufferGeometry(textWidth/6,5);
-      //var geometry = new THREE.PlaneBufferGeometry(40,5);
-      var material = new THREE.MeshBasicMaterial({
-        transparent: true,
-        opacity: 1.0,
-        map: texture,
-        side: THREE.DoubleSide
+      var material = new THREE.SpriteMaterial({
+        transparent:true,
+        map: texture
       });
-      label1[n] = new THREE.Mesh(geometry, material);
-      label1[n].position.x = sprites[n].position.x;
-      label1[n].position.y = sprites[n].position.y-5;
-      label1[n].rotation.set(Math.PI/2,0,0); 
+      label1[n] = new THREE.Sprite(material);
+      label1[n].scale.set(canvas.width/4,canvas.height/4,1);  
+      
       scene.add(label1[n]);
     }
   }
-
+    
   function addBar(height){    
     for (var n=bar.length; n < graph.nodes.length; n++) {
       if (graph.nodes[n].labels[0] == 'COMMENT') {
@@ -552,15 +655,15 @@ $(function() {
           specular: 0xAAAA00
         });
       }
-      bar[n] = new THREE.Mesh(new THREE.BoxGeometry(10,10,1.0), material);
+      bar[n] = new THREE.Mesh(new THREE.BoxGeometry(10,1.0,10), material);
       bar[n].position.x = graph.nodes[n].x;
-      bar[n].position.y = graph.nodes[n].y;
-      bar[n].position.z = graph.nodes[n].z;
-      bar[n].scale.z = height;
+      bar[n].position.y = graph.nodes[n].z;
+      bar[n].position.z = graph.nodes[n].y;
+      bar[n].scale.y = height;
       scene.add(bar[n]);
     }
   }
-  
+
   function showBar(prop) {
     var max = 0;
     for (var n in graph.nodes) {
@@ -576,8 +679,8 @@ $(function() {
       height = barMax * height / max; // Normarized
       if (height <= 0) height = 0.01; // Non-zero value for avoid warnings
       
-      bar[n].scale.z = height;
-      bar[n].position.z = height/2;
+      bar[n].scale.y = height;
+      bar[n].position.y = height/2;
 	}
   }
   
@@ -586,28 +689,28 @@ $(function() {
     controls.update(); 
     force.tick();
     for (var n=0; n<sprites.length; n++) {
-      if (graph.nodes[n].z > 10) graph.nodes[n].z -= 10;
+      if (graph.nodes[n].z > 10) graph.nodes[n].z -= 1;
       if (graph.nodes[n].pickUp) graph.nodes[n].z = pickUpHeight;
       sprites[n].position.x = graph.nodes[n].x;
-      sprites[n].position.y = graph.nodes[n].y;
-      sprites[n].position.z = graph.nodes[n].z + bar[n].scale.z;
+      sprites[n].position.y = graph.nodes[n].z + bar[n].scale.y;
+      sprites[n].position.z = graph.nodes[n].y;
       bar[n].position.x = graph.nodes[n].x;
-      bar[n].position.y = graph.nodes[n].y;
-      bar[n].position.z = graph.nodes[n].z + bar[n].scale.z * 0.5;
+      bar[n].position.y = graph.nodes[n].z + bar[n].scale.y * 0.5;
+      bar[n].position.z = graph.nodes[n].y;
       if (label1[n]) {
         label1[n].position.x = graph.nodes[n].x;
-        label1[n].position.y = graph.nodes[n].y;
-        label1[n].position.z = sprites[n].position.z + graph.nodes[n].height;
+        label1[n].position.y = sprites[n].position.y + graph.nodes[n].height;
+        label1[n].position.z = graph.nodes[n].y;
       }
     };
     
     for (var j=0; j<lines.length; j++){
       lines[j].geometry.vertices[0].x = graph.nodes[nametable[links[j].source.id]].x;
-      lines[j].geometry.vertices[0].y = graph.nodes[nametable[links[j].source.id]].y;
-      lines[j].geometry.vertices[0].z = graph.nodes[nametable[links[j].source.id]].z;
+      lines[j].geometry.vertices[0].y = graph.nodes[nametable[links[j].source.id]].z;
+      lines[j].geometry.vertices[0].z = graph.nodes[nametable[links[j].source.id]].y;
       lines[j].geometry.vertices[1].x = graph.nodes[nametable[links[j].target.id]].x;
-      lines[j].geometry.vertices[1].y = graph.nodes[nametable[links[j].target.id]].y;
-      lines[j].geometry.vertices[1].z = graph.nodes[nametable[links[j].target.id]].z;
+      lines[j].geometry.vertices[1].y = graph.nodes[nametable[links[j].target.id]].z;
+      lines[j].geometry.vertices[1].z = graph.nodes[nametable[links[j].target.id]].y;
       lines[j].geometry.verticesNeedUpdate = true;
     }
     
@@ -627,7 +730,7 @@ $(function() {
         .links(links)
         .size([width,height])
         .gravity(0.1)
-        .charge([-150])  // was -100 :repulsion forth between nodes
+        .charge([-150])  // was -100 :repulsion force between nodes
         .friction(0.95) 
         .linkDistance([70])
         .linkStrength(1);
