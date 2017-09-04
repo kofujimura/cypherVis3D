@@ -22,8 +22,7 @@
 <div id="container">
   <div class="query">
     <p><span id="contents"></span></p>
-    <textarea id="query">
-      MATCH p=(a {name:'George Lucas'})--(b)--(c) UNWIND relationships(p) AS x RETURN x ORDER BY b.releaseDate
+    <textarea id="query">MATCH p=(a)--(b)--(c) UNWIND relationships(p) AS x RETURN x ORDER BY b.releaseDate
     </textarea>
     <div>
       <button id="buttonQ">Send Query</button>
@@ -69,6 +68,11 @@
 </div>
 
 <script type="text/javascript">
+/* global $ */
+/* global THREE */
+/* global d3 */
+/* global io */
+
 
 $(function() {
 
@@ -79,6 +83,7 @@ $(function() {
   var edgeIDs = {};
   var graph = {"nodes":nodes,"edges":edges};
   var nodeAddingInterval;
+  var selectedProp;
   
   // Socket IO
   var deviceid;
@@ -95,7 +100,7 @@ $(function() {
   var scene = new THREE.Scene();
   var width = window.innerWidth;
   var height = window.innerHeight;
-  var renderer,camera;
+  var renderer,camera,controls;
   var FAR = 10000;
   var groundMaterial;
   var sprites = [];
@@ -182,14 +187,14 @@ $(function() {
     });
 
     $("#buttonB").on("click", function(){
-      for (n in bar) {        
+      for (var n in bar) {        
         bar[n].scale.y = 1.0;
         bar[n].position.y = 0.5;
       }
     });
     
     $("#buttonL").on("click", function(){
-      for (n in graph.nodes) {
+      for (var n in graph.nodes) {
         if (label1[n]) scene.remove(label1[n]);
       }
     });
@@ -326,7 +331,7 @@ $(function() {
         }
         console.log(e.currentTarget.textContent);
       });
-    };
+    }
 
     
     dom = $('<p>Node Properties</p>');
@@ -337,29 +342,30 @@ $(function() {
       dom = $('<button id="prop'+i+'">'+Object.keys(props)[i]+'</button>');
       $("#nodeButtons").append(dom);
       $(document).on("click","#prop"+i, function(e) {
+        selectedProp = e.currentTarget.textContent;
+        console.log(selectedProp);
         if ($("#demo1").prop('checked')) {
-          showBar(e.currentTarget.textContent);
+          showBar(selectedProp);
         } else {
           for (var n in graph.nodes) {
-            graph.nodes[n].label = graph.nodes[n][e.currentTarget.textContent];
+            graph.nodes[n].label = graph.nodes[n][selectedProp];
             generateLabel(n);
           }
         }
       });
-    };
+    }
     
     // EdgeButtons
     $("#edgeButtons").empty();
 
     dom = $('<p> Edge Types </p>');
     $("#edgeButtons").append(dom);
-    edgeTypes = {};
+    var edgeTypes = {};
     for (var n in graph.edges) {
       edgeTypes[graph.edges[n].type] = false;
     }
     
     for (var i in Object.keys(edgeTypes)) {
-      
       var p = Object.keys(edgeTypes)[i];
       $("#edgeButtons").append($('<button id="type'+i+'">'+p+'</button>')
         .css('color','#' + edgeTypeColor[p].toString(16)));
@@ -375,7 +381,7 @@ $(function() {
           // generateLabel(n,e.currentTarget.textContent); // future work
         }
       });
-    };
+    }
     
     $("button").button(); // Apply css to the buttons.
   }
@@ -602,6 +608,10 @@ $(function() {
       sprites[n].add(glow);
       
       scene.add(sprites[n]);
+      
+      // Show the label of selected property. 
+      graph.nodes[n].label = graph.nodes[n][selectedProp];
+      generateLabel(n);
     }
   }
 
@@ -681,7 +691,7 @@ $(function() {
       
       bar[n].scale.y = height;
       bar[n].position.y = height/2;
-	}
+	  }
   }
   
   function renderLoop () {
@@ -702,7 +712,7 @@ $(function() {
         label1[n].position.y = sprites[n].position.y + graph.nodes[n].height;
         label1[n].position.z = graph.nodes[n].y;
       }
-    };
+    }
     
     for (var j=0; j<lines.length; j++){
       lines[j].geometry.vertices[0].x = graph.nodes[nametable[links[j].source.id]].x;
